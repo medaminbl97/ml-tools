@@ -37,23 +37,35 @@ classdef LinearModel < handle
             obj.B = [beta0; beta1];
         end
 
-        function [lx, ly] = predictSimple(obj, index)
-            % Führt fitSimple durch und gibt Regressionslinie zurück
-            % index: Spalte von X (ab 2 wegen Bias)
+        function h = predictSimple(obj, index)
+            % Führt fitSimple durch und berechnet h = β₀ + β₁ * x (für Trainingsdaten)
+            % Gibt nur den Vorhersagevektor h zurück
     
-            % Parameterschätzung (aktualisiert obj.B)
+            % Parameter berechnen
             obj.fitSimple(index);
     
-            % Eingangsvariable extrahieren
+            % Eingangsvariable
             x = obj.X(:, index);
     
-            % linspace für glatte Linie
-            lx = linspace(min(x), max(x), 100)';
-    
-            % Vorhersage mit aktuellen Parametern
+            % Vorhersage für Trainingsdaten
             beta0 = obj.B(1);
             beta1 = obj.B(2);
-            ly = beta0 + beta1 * lx;
+            h = beta0 + beta1 * x;
+    
+            % Optional im Objekt speichern
+            obj.h = h;
+        end
+
+        function y_hat = evaluateSimple(obj, x_input, index)
+            % Führt fitSimple(index) durch und gibt Vorhersage für x_input zurück
+    
+            % Parameter berechnen (für aktuelles Feature)
+            obj.fitSimple(index);
+    
+            % Berechne Vorhersage
+            beta0 = obj.B(1);
+            beta1 = obj.B(2);
+            y_hat = beta0 + beta1 * x_input;
         end
 
         function C = costSimple(obj, index)
@@ -73,6 +85,11 @@ classdef LinearModel < handle
             % Kostenfunktion (vektorisiert)
             C = (1 / (2 * m)) * sum((h - y).^2);
         end
+
+        function fit(obj)
+           % Fit für multivariate lineare Regression (Normalengleichung)
+            obj.B = pinv(obj.X) * obj.y;
+        end
         
         function C = cost(obj)
             % Kostenfunktion in Matrixschreibweise
@@ -84,5 +101,35 @@ classdef LinearModel < handle
             C = (1 / (2 * m)) * (e' * e);
         end
 
+        function h = predict(obj)
+            % Berechnet Vorhersagevektor für alle Trainingsdaten
+            obj.fit();
+            h = obj.X * obj.B;
+            obj.h = h;
+        end
+
+        function y_hat = evaluate(obj, x_input)
+            % Gibt Vorhersage für gegebenen Eingabevektor x_input zurück
+            % x_input muss ein Zeilenvektor inkl. Bias sein, also z.B. [1, x3, x4, x6]
+            obj.fit();
+            y_hat = x_input * obj.B;
+        end
+
+        function score = r2(obj)
+            % Berechnet das Bestimmtheitsmaß R² für das aktuelle Modell
+    
+            y = obj.y;
+            y_mean = mean(y);
+    
+            % Falls h nicht gesetzt ist, berechne es
+            if isempty(obj.h)
+                obj.h = obj.X * obj.B;
+            end
+    
+            ss_res = sum((y - obj.h).^2);
+            ss_tot = sum((y - y_mean).^2);
+    
+            score = 1 - (ss_res / ss_tot);
+        end
     end
 end
