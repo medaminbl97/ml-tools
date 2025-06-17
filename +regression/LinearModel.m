@@ -210,5 +210,26 @@ classdef LinearModel < handle
             end
             B_rescaled(1) = B_scaled(1) - correction;
         end
+
+        function new_model = createPolyFeatures(obj, index, powers)
+            % Erstellt neues LinearModel mit polynomialen Features aus einer Spalte
+            % index: Spalte von obj.X, die transformiert wird
+            % powers: Vektor mit z. B. [0 1 2 3] → ergibt [1, x, x², x³]
+    
+            x = obj.X(:, index);
+            n = size(x, 1);
+            num_terms = length(powers);
+    
+            % Neue Designmatrix erstellen
+            X_poly = zeros(n, num_terms);
+            for j = 1:num_terms
+                X_poly(:, j) = x.^powers(j);
+            end
+    
+            % Initialisiere neues Modell mit entsprechendem B
+            B_init = zeros(num_terms, 1);
+            X_poly = [ones(length(x),1), X_poly]
+            new_model = regression.LinearModel(X_poly, obj.y, B_init);
+        end
     end
 end
