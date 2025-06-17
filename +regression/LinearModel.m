@@ -6,6 +6,8 @@ classdef LinearModel < handle
         y           % Reale Zielwerte (m x 1)
         B           % Parametervektor (Beta)
         h           % Vorhersagewerte (Hypothese)
+        mu   % Mittelwerte der Spalten (außer Bias)
+        sigma % Standardabweichungen der Spalten (außer Bias)
     end
     
     methods
@@ -14,7 +16,9 @@ classdef LinearModel < handle
             obj.X = X;
             obj.y = y;
             obj.B = B;
-            obj.h = [];  % wird bei Bedarf berechnet
+            obj.h = [];
+            obj.mu = [];
+            obj.sigma = [];
         end
 
         function fitSimple(obj,index)
@@ -130,6 +134,81 @@ classdef LinearModel < handle
             ss_tot = sum((y - y_mean).^2);
     
             score = 1 - (ss_res / ss_tot);
+        end
+
+        function [R, lambda] = eigenvalues(obj)
+            % Gibt die Korrelationsmatrix R und ihre Eigenwerte lambda zurück
+            m = size(obj.X, 1);
+            R = (1 / m) * (obj.X' * obj.X);  % Korrelationsmatrix
+            lambda = eig(R);                 % Eigenwerte
+        end
+
+        function scaleInputs(obj)
+            X = obj.X;
+            n = size(X, 2);
+            obj.mu = zeros(1, n);
+            obj.sigma = ones(1, n);  % Default-Werte für spätere Rückskalierung
+    
+            for j = 2:n  % Spalte 1 bleibt Bias
+                mu_j = mean(X(:,j));
+                sigma_j = std(X(:,j));
+    
+                X(:,j) = (X(:,j) - mu_j) / sigma_j;
+    
+                obj.mu(j) = mu_j;
+                obj.sigma(j) = sigma_j;
+            end
+    
+            obj.X = X;
+        end
+
+        function g = gradient(obj)
+            % Berechnet den Gradientenvektor ∇C der Kostenfunktion
+            m = size(obj.X, 1);
+            X = obj.X;
+            y = obj.y;
+            B = obj.B;
+    
+            g = (1/m) * (X' * X * B - X' * y);
+        end
+
+        function cost_history = gradientDescent(obj, alpha, num_iter)
+            % Führt das Gradientenverfahren durch
+            % Gibt Kostenverlauf zurück
+    
+            cost_history = zeros(num_iter, 1);
+    
+            for k = 1:num_iter
+                g = obj.gradient();           % Gradientenvektor
+                obj.B = obj.B - alpha * g;    % Update der Parameter
+                cost_history(k) = obj.cost(); % Kosten speichern
+            end
+        end
+
+        function B_rescaled = rescaleParameters(obj)
+            % Rückskalierung gemäß:
+            % β₀ = ~β₀ - sum(~βᵢ * μᵢ / σᵢ)
+            % βᵢ = ~βᵢ / σᵢ
+    
+            B_scaled = obj.B;
+            mu = obj.mu;
+            sigma = obj.sigma;
+            n = length(B_scaled);
+    
+            B_rescaled = zeros(n, 1);
+    
+            % Rückskalierte Steigungen: βᵢ = ~βᵢ / σᵢ  (i ≥ 1)
+            for i = 2:n
+                B_rescaled(i) = B_scaled(i) / sigma(i);
+            end
+    
+            % Rückskalierter Achsenabschnitt:
+            % β₀ = ~β₀ - ∑ ~βᵢ * μᵢ / σᵢ
+            correction = 0;
+            for i = 2:n
+                correction = correction + B_scaled(i) * mu(i) / sigma(i);
+            end
+            B_rescaled(1) = B_scaled(1) - correction;
         end
     end
 end
