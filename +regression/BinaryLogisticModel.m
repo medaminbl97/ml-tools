@@ -121,5 +121,29 @@ classdef BinaryLogisticModel < handle
             y_hat = h >= 0.5;
             ER = mean(y_hat == yval);
         end
+
+        function newModel = createPolyModel(obj, degree)
+            % Wandelt X(:,2:3) in Polynommerkmale um (x1, x2)
+            % Gibt ein neues BinaryLogisticModel mit erweiterten Features zurück
+    
+            if size(obj.X, 2) ~= 3
+                error('createPolyModel funktioniert nur mit genau 2 Features (plus Bias-Spalte).');
+            end
+    
+            x1 = obj.X(:,2);
+            x2 = obj.X(:,3);
+    
+            % Polynommerkmale erzeugen
+            out = zeros(size(x1));  % Bias-Spalte
+            for i = 1:degree
+                for j = 0:i
+                    out(:, end + 1) = (x1.^(i-j)) .* (x2.^j);
+                end
+            end
+    
+            % Neues Modell erzeugen (ohne nochmal Bias-Spalte hinzufügen)
+            newModel = regression.BinaryLogisticModel(out(:,2:end), obj.y);
+        end
+
     end
 end
