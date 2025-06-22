@@ -62,11 +62,11 @@ classdef BinaryLogisticModel < handle
     
             C = zeros(iter,1);
     
-            for i = 1:iter
-                [C0, gC] = obj.computeCost();
-                C(i) = C0;
-                obj.B = obj.B - alpha * gC;
-            end
+                for i = 1:iter
+                    [C0, gC] = obj.computeCost();
+                    C(i) = C0;
+                    obj.B = obj.B - alpha * gC;
+                end
         end
 
         function scaleInputs(obj)
@@ -143,6 +143,13 @@ classdef BinaryLogisticModel < handle
     
             % Neues Modell erzeugen (ohne nochmal Bias-Spalte hinzufügen)
             newModel = regression.BinaryLogisticModel(out(:,2:end), obj.y);
+        end
+
+        function [R, lambda] = eigenvalues(obj)
+            % Gibt die Korrelationsmatrix R und ihre Eigenwerte lambda zurück
+            m = size(obj.X, 1);
+            R = (1 / m) * (obj.X' * obj.X);  % Korrelationsmatrix
+            lambda = eig(R);                 % Eigenwerte
         end
 
     end
