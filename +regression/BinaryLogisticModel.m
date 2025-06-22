@@ -40,34 +40,68 @@ classdef BinaryLogisticModel < handle
             h = 1 ./ (1 + exp(-z));
         end
 
-        function [C, gC] = computeCost(obj)
-            % Berechnet die Kostenfunktion und den Gradienten für das Modell
+        function [C, gC] = computeCost(obj, beta)
+            % Berechnet Kosten und Gradienten
+            % Wenn beta nicht übergeben wird → verwende obj.B
+        
+            if nargin < 2
+                beta = obj.B;
+            end
+        
             m = length(obj.y);
-            z = obj.X * obj.B;
-            h = obj.sigmoid(z);  % benutzt interne sigmoid-Methode
+            z = obj.X * beta;
+            h = obj.sigmoid(z);
+        
+            % numerisch stabilisieren (gegen log(0))
+            h = min(max(h, 1e-15), 1 - 1e-15);
+        
             obj.H = h;
-    
-            % Kosten
-            C = -(log(h') * obj.y + log(1 - h') * (1 - obj.y)) / m;
-    
-            % Gradienten
+        
+            % Kostenfunktion (skalare Ausgabe)
+            C = -mean(obj.y .* log(h) + (1 - obj.y) .* log(1 - h));
+        
+            % Gradienten (gleiche Dimension wie beta)
             gC = (obj.X' * (h - obj.y)) / m;
         end
-
-        function C = train(obj, alpha, iter)
-            % Führt Gradient Descent durch und aktualisiert obj.B
+        
+        function C = trainGradientDescent(obj, alpha, iter)
+            % Trainiert das Modell mit Gradient Descent
             % alpha: Lernrate
             % iter: Anzahl Iterationen
             % Rückgabe: Verlauf der Kostenfunktion
-    
+        
             C = zeros(iter,1);
-    
-                for i = 1:iter
-                    [C0, gC] = obj.computeCost();
-                    C(i) = C0;
-                    obj.B = obj.B - alpha * gC;
-                end
+            for i = 1:iter
+                [C0, gC] = obj.computeCost();
+                C(i) = C0;
+                obj.B = obj.B - alpha * gC;
+            end
         end
+
+        function C = trainFminunc(obj, maxIter)
+            % Trainiert das Modell mit fminunc
+            % maxIter: Maximale Iterationen
+            % Rückgabe: finaler Kostenwert (Skalar)
+        
+            options = optimoptions('fminunc', ...
+                'Algorithm', 'trust-region', ...
+                'GradObj', 'on', ...
+                'MaxIter', maxIter, ...
+                'Display', 'iter');
+        
+            initial_beta = zeros(size(obj.X, 2), 1);
+            costFunc = @(b) obj.computeCost(b);  % closure mit obj
+        
+            [optB, Cval] = fminunc(costFunc, initial_beta, options);
+        
+            obj.B = optB;
+            C = Cval;
+        
+            fprintf('Kostenfunktion beim Optimalwert: %f\n', C);
+            fprintf('Optimales beta:\n');
+            fprintf(' %f\n', obj.B);
+        end
+
 
         function scaleInputs(obj)
             X = obj.X;
