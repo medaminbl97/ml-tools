@@ -9,31 +9,45 @@ classdef BinaryLogisticModel < handle
         H   % (m × 1) Hypothesen: sigmoid(X * B)
         mu     % Mittelwerte der Eingabevariablen (für Rückskalierung)
         sigma  % Standardabweichungen (für Rückskalierung)
+        lambda
+        regularization
     end
 
     methods
         function obj = BinaryLogisticModel(X, y)
-            if nargin < 2
-                error('Bitte X und y beim Erstellen des Modells angeben.');
+            if nargin == 0
+                % Default constructor: for preallocation
+                obj.X = [];
+                obj.y = [];
+                obj.B = [];
+                obj.H = [];
+                obj.mu = [];
+                obj.sigma = [];
+                obj.lambda = 0;
+                obj.regularization = "none";
+
+            else
+        
+                % Bias hinzufügen
+                m = size(X, 1);
+                X_aug = [ones(m, 1), X];
+            
+                % Prüfen, ob binär
+                uniqueY = unique(y);
+                if ~all(ismember(uniqueY, [0 1]))
+                    error('y muss binär sein: nur 0 und 1 sind erlaubt.');
+                end
+            
+                % Initialisierung
+                obj.X = X_aug;
+                obj.y = y(:);  % Spaltenvektor
+                obj.B = zeros(size(X_aug, 2), 1);
+                obj.H = [];
+                obj.mu = [];
+                obj.sigma = [];
+                obj.lambda = 0;
+                obj.regularization = "none";
             end
-        
-            % Bias hinzufügen
-            m = size(X, 1);
-            X_aug = [ones(m, 1), X];
-        
-            % Prüfen, ob binär
-            uniqueY = unique(y);
-            if ~all(ismember(uniqueY, [0 1]))
-                error('y muss binär sein: nur 0 und 1 sind erlaubt.');
-            end
-        
-            % Initialisierung
-            obj.X = X_aug;
-            obj.y = y(:);  % Spaltenvektor
-            obj.B = zeros(size(X_aug, 2), 1);
-            obj.H = [];
-            obj.mu = [];
-            obj.sigma = [];
         end
         
         function h = sigmoid(~, z)
@@ -56,12 +70,13 @@ classdef BinaryLogisticModel < handle
             h = min(max(h, 1e-15), 1 - 1e-15);
         
             obj.H = h;
-        
+            
+            [costPenalty, gradPenalty] = obj.getPenalty();
             % Kostenfunktion (skalare Ausgabe)
-            C = -mean(obj.y .* log(h) + (1 - obj.y) .* log(1 - h));
+            C = -mean(obj.y .* log(h) + (1 - obj.y) .* log(1 - h)) + costPenalty;
         
             % Gradienten (gleiche Dimension wie beta)
-            gC = (obj.X' * (h - obj.y)) / m;
+            gC = (obj.X' * (h - obj.y)) / m + gradPenalty;
         end
         
         function C = trainGradientDescent(obj, alpha, iter)
@@ -78,16 +93,19 @@ classdef BinaryLogisticModel < handle
             end
         end
 
-        function C = trainFminunc(obj, maxIter)
+        function C = trainFminunc(obj, maxIter,log)
             % Trainiert das Modell mit fminunc
             % maxIter: Maximale Iterationen
             % Rückgabe: finaler Kostenwert (Skalar)
+
+            if nargin < 3
+                log = false;
+            end
         
             options = optimoptions('fminunc', ...
                 'Algorithm', 'trust-region', ...
                 'GradObj', 'on', ...
-                'MaxIter', maxIter, ...
-                'Display', 'iter');
+                'MaxIter', maxIter);
         
             initial_beta = zeros(size(obj.X, 2), 1);
             costFunc = @(b) obj.computeCost(b);  % closure mit obj
@@ -96,10 +114,11 @@ classdef BinaryLogisticModel < handle
         
             obj.B = optB;
             C = Cval;
-        
-            fprintf('Kostenfunktion beim Optimalwert: %f\n', C);
-            fprintf('Optimales beta:\n');
-            fprintf(' %f\n', obj.B);
+            if log
+                fprintf('Kostenfunktion beim Optimalwert: %f\n', C);
+                fprintf('Optimales beta:\n');
+                fprintf(' %f\n', obj.B);
+            end
         end
 
 
@@ -156,27 +175,35 @@ classdef BinaryLogisticModel < handle
             ER = mean(y_hat == yval);
         end
 
-        function newModel = createPolyModel(obj, degree)
-            % Wandelt X(:,2:3) in Polynommerkmale um (x1, x2)
-            % Gibt ein neues BinaryLogisticModel mit erweiterten Features zurück
-    
+        function models = createPolyModel(obj, degrees)
+            % Erstellt ein Array von BinaryLogisticModel-Objekten für gegebene Polynomialgrade
+            % degrees: Vektor von Polynomialgraden (z.B. [2, 3, 5])
+            % Rückgabe: Array von BinaryLogisticModel-Instanzen
+        
             if size(obj.X, 2) ~= 3
                 error('createPolyModel funktioniert nur mit genau 2 Features (plus Bias-Spalte).');
             end
-    
+        
             x1 = obj.X(:,2);
             x2 = obj.X(:,3);
-    
-            % Polynommerkmale erzeugen
-            out = zeros(size(x1));  % Bias-Spalte
-            for i = 1:degree
-                for j = 0:i
-                    out(:, end + 1) = (x1.^(i-j)) .* (x2.^j);
+        
+            numDegrees = length(degrees);
+            models(1, numDegrees) = regression.BinaryLogisticModel();  % Preallocate model array
+        
+            for k = 1:numDegrees
+                degree = degrees(k);
+        
+                % Polynommerkmale erzeugen
+                features = ones(size(x1));  % Start mit Bias-Spalte
+                for i = 1:degree
+                    for j = 0:i
+                        features(:, end + 1) = (x1.^(i - j)) .* (x2.^j);
+                    end
                 end
+        
+                % Modell erzeugen (Bias-Spalte wird nicht nochmal hinzugefügt)
+                models(k) = regression.BinaryLogisticModel(features(:, 2:end), obj.y);
             end
-    
-            % Neues Modell erzeugen (ohne nochmal Bias-Spalte hinzufügen)
-            newModel = regression.BinaryLogisticModel(out(:,2:end), obj.y);
         end
 
         function [R, lambda] = eigenvalues(obj)
@@ -185,6 +212,46 @@ classdef BinaryLogisticModel < handle
             R = (1 / m) * (obj.X' * obj.X);  % Korrelationsmatrix
             lambda = eig(R);                 % Eigenwerte
         end
+
+        function [costPenalty, gradPenalty] = getPenalty(obj)
+            % Berechnet die Regularisierungsanteile für Kostenfunktion und Gradienten
+            % Nur für L2 (ridge) Regularisierung
+            
+            if isempty(obj.B)
+                error("getPenalty: Parameter 'B' ist leer.");
+            end
+        
+            if isempty(obj.X)
+                error("getPenalty: Trainingsdaten 'X' sind leer, m kann nicht berechnet werden.");
+            end
+        
+            m = size(obj.X, 1);  % Anzahl Trainingsbeispiele
+            B = obj.B;
+        
+            switch obj.regularization
+                case "ridge"
+                    % Ignoriere Bias-Term (B(1))
+                    BReg = [0; B(2:end)];
+        
+                    costPenalty = (obj.lambda / (2 * m)) * sum(BReg.^2);
+                    gradPenalty = (obj.lambda / m) * BReg;
+        
+                case "lasso"
+                    warning("Lasso: Gradienten-Term ist nicht exakt definiert (nicht differenzierbar).");
+                    BReg = [0; B(2:end)];
+        
+                    costPenalty = (obj.lambda / m) * sum(abs(BReg));
+                    gradPenalty = (obj.lambda / m) * sign(BReg);  % Platzhalter – siehe Hinweis
+        
+                case "none"
+                    costPenalty = 0;
+                    gradPenalty = zeros(size(obj.B));
+        
+                otherwise
+                    error("Unbekannter Regularisierungstyp '%s'", obj.regularization);
+            end
+        end
+
 
     end
 end
