@@ -13,7 +13,6 @@ classdef svmModel < handle
         X % Trainingsdaten
         y % Labels
         kernelFunction = 'linear' % Kernel-Funktion ('linear', 'rbf', etc.)
-        PolynomialOrder = 1;
         boxConstraint = 1         % Box-Constraint (C)
         Model % Enthält das trainierte ClassificationSVM-Objekt
     end
@@ -27,7 +26,7 @@ classdef svmModel < handle
             end
         end
 
-        function train(obj)
+        function train(obj,varargin)
             % Trainiert das SVM-Modell mit den gespeicherten Parametern
         
             % Basis-Argumente
@@ -36,10 +35,10 @@ classdef svmModel < handle
                 'BoxConstraint', obj.boxConstraint, ...
                 'Standardize', true
             };
-        
-            % Nur hinzufügen, wenn polynomial
-            if strcmp(obj.kernelFunction, 'polynomial')
-                args = [args, {'PolynomialOrder', obj.PolynomialOrder}];
+
+                        % Zusätzliche Name-Value-Pairs hinzufügen
+            if ~isempty(varargin)
+                args = [args, varargin];
             end
         
             % Aufruf
@@ -56,35 +55,45 @@ classdef svmModel < handle
             sv = obj.Model.SupportVectors;
         end
 
-        function optimizeHyperparameters(obj)
+        function optimizeHyperparameters(obj, CexpArray, varargin)
+            % Standard Exponenten für C, falls nicht übergeben
+            if nargin < 2 || isempty(CexpArray)
+                CexpArray = [-2, -1, 0, 1, 2];
+            end
+        
+            % Basis-Argumente
             args = {
                 'KernelFunction', obj.kernelFunction, ...
-                'BoxConstraint', obj.boxConstraint, ...
-                'Standardize', true,...
+                'Standardize', true, ...
                 'CrossVal', 'on'
             };
         
-            % Nur hinzufügen, wenn polynomial
-            if strcmp(obj.kernelFunction, 'polynomial')
-                args = [args, {'PolynomialOrder', obj.PolynomialOrder}];
+            % Zusätzliche Name-Value-Pairs hinzufügen
+            if ~isempty(varargin)
+                args = [args, varargin];
             end
-
+        
             % Optimiert BoxConstraint (C) mittels Cross-Validation
-            Cvals = logspace(-2, 2, 5);
+            Cvals = 10.^CexpArray;
             bestC = Cvals(1);
             bestLoss = inf;
+        
             for C = Cvals
-                Mdl = fitcsvm(obj.X, obj.y, args{:});
+                currentArgs = [args, {'BoxConstraint', C}];
+                Mdl = fitcsvm(obj.X, obj.y, currentArgs{:});
                 loss = kfoldLoss(Mdl);
+        
                 if loss < bestLoss
                     bestLoss = loss;
                     bestC = C;
                 end
             end
+        
             fprintf('Optimaler BoxConstraint (C): %.4f\n', bestC);
             obj.boxConstraint = bestC;
-            obj.train(); % Trainiert das finale Modell mit optimalem C
+            obj.train();
         end
+
 
         function showModelInfo(obj)
             % Zeigt Informationen über das Modell an
@@ -140,6 +149,22 @@ classdef svmModel < handle
             %Markieren der Support Vektoren
             plot(obj.X(svInd,1),obj.X(svInd,2),'ko','MarkerSize',10)
         end
+
+        function FR = evaluate(obj, Xtest, ytest)
+            % Evaluates the model on test data and returns the error rate (Fehlerrate)
+            %
+            % FR = 1 - (correctly classified samples / total samples)
+        
+            % Vorhersage
+            y_pred = predict(obj.Model, Xtest);
+        
+            % Erkennungsrate
+            ER = sum(y_pred == ytest) / numel(ytest);
+        
+            % Fehlerrate
+            FR = 1 - ER;
+        end
+
 
     end
 end
