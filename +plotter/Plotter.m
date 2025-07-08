@@ -5,13 +5,24 @@ classdef Plotter
     methods(Static)
         
         function plotScatter(x1, x2, y)
-            % Zeichnet ein Streudiagramm der Datenpunkte (x1, x2) mit y ∈ {0,1}
-            Einsen = find(y == 1); 
-            Nullen = find(y == 0);
-
-            plot(x1(Einsen), x2(Einsen), 'g+','LineWidth', 1.2);
+            % Zeichnet ein Streudiagramm für beliebige binäre Werte in y
+            % z.B. y = [-1, 1], y = [3, 7], ...
+            
+            % Eindeutige Werte in y finden
+            classes = unique(y);
+            
+            if numel(classes) ~= 2
+                error('plotScatter unterstützt nur genau 2 Klassen.');
+            end
+            
+            idx1 = find(y == classes(1));
+            idx2 = find(y == classes(2));
+            
+            plot(x1(idx1), x2(idx1), 'r.', 'LineWidth', 1.2, 'DisplayName', string(classes(1)));
             hold on;
-            plot(x1(Nullen), x2(Nullen), 'ro', 'LineWidth', 1.2);
+            plot(x1(idx2), x2(idx2), 'g.', 'LineWidth', 1.2, 'DisplayName', string(classes(2)));
+            
+            legend show;
             hold off;
         end
         
