@@ -1,209 +1,124 @@
 classdef LinearModel < handle
-    %LINEARMODEL Klasse für Lineare Regression (ein- oder mehrdimensional)
-    
     properties
-        X           % Trainingsdaten (m x n)
-        y           % Reale Zielwerte (m x 1)
-        B           % Parametervektor (Beta)
-        h           % Vorhersagewerte (Hypothese)
-        mu   % Mittelwerte der Spalten (außer Bias)
-        sigma % Standardabweichungen der Spalten (außer Bias)
+        X           % Original Trainingsdaten (m x n)
+        y           % Zielwerte (m x 1)
+        B           % Parametervektor
+        h           % Vorhersagen auf Trainingsdaten
+        mu          % Spaltenmittelwerte (außer Bias)
+        sigma       % Standardabweichungen (außer Bias)
+        X_current   % Aktuelle Featureauswahl
+        featureInds
     end
-    
+
     methods
-        function obj = LinearModel(X, y, B)
-            % Konstruktor
+        function obj = LinearModel(X, y)
             obj.X = X;
             obj.y = y;
-            obj.B = B;
+            obj.B = [];
             obj.h = [];
             obj.mu = [];
             obj.sigma = [];
+            obj.X_current = X;
+            obj.featureInds = [];
         end
 
-        function fitSimple(obj,index)
-            % Fit für einfache lineare Regression mit einer Eingangsvariable
-    
-            x = obj.X(:,index);
-            y = obj.y;
-    
-            % Mittelwerte
-            x_bar = mean(x);
-            y_bar = mean(y);
-    
-            % Kovarianz und Varianz (cov gibt Matrix zurück)
-            cov_xy = cov(x, y);     % 2x2 Matrix
-            beta1 = cov_xy(1, 2) / var(x);  % Alternativ: cov_xy(1,2) / cov_xy(1,1)
-    
-            beta0 = y_bar - beta1 * x_bar;
-    
-            % Speichern als Spaltenvektor
-            obj.B = [beta0; beta1];
-        end
-
-        function h = predictSimple(obj, index)
-            % Führt fitSimple durch und berechnet h = β₀ + β₁ * x (für Trainingsdaten)
-            % Gibt nur den Vorhersagevektor h zurück
-    
-            % Parameter berechnen
-            obj.fitSimple(index);
-    
-            % Eingangsvariable
-            x = obj.X(:, index);
-    
-            % Vorhersage für Trainingsdaten
-            beta0 = obj.B(1);
-            beta1 = obj.B(2);
-            h = beta0 + beta1 * x;
-    
-            % Optional im Objekt speichern
-            obj.h = h;
-        end
-
-        function y_hat = evaluateSimple(obj, x_input, index)
-            % Führt fitSimple(index) durch und gibt Vorhersage für x_input zurück
-    
-            % Parameter berechnen (für aktuelles Feature)
-            obj.fitSimple(index);
-    
-            % Berechne Vorhersage
-            beta0 = obj.B(1);
-            beta1 = obj.B(2);
-            y_hat = beta0 + beta1 * x_input;
-        end
-
-        function C = costSimple(obj, index)
-            % Berechnet Kostenfunktion für einfache lineare Regression (1 Feature)
-            x = obj.X(:, index);
-            y = obj.y;
-            m = length(y);
-    
-            % Vorhersage
-            beta0 = obj.B(1);
-            beta1 = obj.B(2);
-            h = beta0 + beta1 * x;
-    
-            % Speichern optional
-            obj.h = h;
-    
-            % Kostenfunktion (vektorisiert)
-            C = (1 / (2 * m)) * sum((h - y).^2);
+        function setFeatureInds(obj, Inds)
+            if nargin < 2 || isempty(Inds)
+                obj.X_current = obj.X;
+                obj.featureInds = 1:size(obj.X, 2);
+            else
+                obj.X_current = obj.X(:, Inds);
+                obj.featureInds = Inds;
+            end
         end
 
         function fit(obj)
-           % Fit für multivariate lineare Regression (Normalengleichung)
-            obj.B = pinv(obj.X) * obj.y;
+            X_design = [ones(size(obj.X_current, 1), 1), obj.X_current];
+            obj.B = pinv(X_design) * obj.y;
+            obj.h = X_design * obj.B;
         end
-        
+
         function C = cost(obj)
-            % Kostenfunktion in Matrixschreibweise
-            % C = (1/2m) * (y - X*B)' * (y - X*B)
-            
-            m = size(obj.X, 1);
-            e = obj.y - obj.X * obj.B;
-            obj.h = obj.X * obj.B;  % Optional: speichern
+            m = size(obj.X_current, 1);
+            X_design = [ones(m, 1), obj.X_current];
+            e = obj.y - X_design * obj.B;
+            obj.h = X_design * obj.B;
             C = (1 / (2 * m)) * (e' * e);
         end
 
-        function h = predict(obj)
-            % Berechnet Vorhersagevektor für alle Trainingsdaten
-            obj.fit();
-            h = obj.X * obj.B;
-            obj.h = h;
-        end
-
-        function y_hat = evaluate(obj, x_input)
-            % Gibt Vorhersage für gegebenen Eingabevektor x_input zurück
-            % x_input muss ein Zeilenvektor inkl. Bias sein, also z.B. [1, x3, x4, x6]
-            obj.fit();
-            y_hat = x_input * obj.B;
-        end
-
-        function score = r2(obj)
-            % Berechnet das Bestimmtheitsmaß R² für das aktuelle Modell
-    
-            y = obj.y;
-            y_mean = mean(y);
-    
-            % Falls h nicht gesetzt ist, berechne es
-            if isempty(obj.h)
-                obj.h = obj.X * obj.B;
+        function h = predict(obj, X_test)
+            if isempty(obj.B)
+                error('Model must be fitted before prediction.');
             end
-    
-            ss_res = sum((y - obj.h).^2);
-            ss_tot = sum((y - y_mean).^2);
-    
+            X_test = [ones(size(X_test, 1), 1), X_test(:,obj.featureInds)];
+            h = X_test * obj.B;
+        end
+
+        function score = r2(obj, X_val, y_val, y_est)
+            if nargin < 4 || isempty(y_est)
+                if isempty(obj.B)
+                    error('Model must be fitted before calling r2().');
+                end
+                X_val = [y_val.^0, X_val(:, obj.featureInds)];  % Add bias
+                y_est = X_val * obj.B;
+            end
+        
+            ss_res = sum((y_val - y_est).^2);
+            ss_tot = sum((y_val - mean(y_val)).^2);
             score = 1 - (ss_res / ss_tot);
         end
 
+
         function [R, lambda] = eigenvalues(obj)
-            % Gibt die Korrelationsmatrix R und ihre Eigenwerte lambda zurück
-            m = size(obj.X, 1);
-            R = (1 / m) * (obj.X' * obj.X);  % Korrelationsmatrix
-            lambda = eig(R);                 % Eigenwerte
+            m = size(obj.X_current, 1);
+            R = (1 / m) * (obj.X_current' * obj.X_current);
+            lambda = eig(R);
         end
 
         function scaleInputs(obj)
-            X = obj.X;
+            X = obj.X_current;
             n = size(X, 2);
             obj.mu = zeros(1, n);
-            obj.sigma = ones(1, n);  % Default-Werte für spätere Rückskalierung
-    
-            for j = 2:n  % Spalte 1 bleibt Bias
-                mu_j = mean(X(:,j));
-                sigma_j = std(X(:,j));
-    
-                X(:,j) = (X(:,j) - mu_j) / sigma_j;
-    
+            obj.sigma = ones(1, n);
+        
+            for j = 2:n  % skip bias term if present
+                mu_j = mean(X(:, j));
+                sigma_j = std(X(:, j));
+                X(:, j) = (X(:, j) - mu_j) / sigma_j;
                 obj.mu(j) = mu_j;
                 obj.sigma(j) = sigma_j;
             end
-    
-            obj.X = X;
+        
+            obj.X_current = X;
         end
 
+
         function g = gradient(obj)
-            % Berechnet den Gradientenvektor ∇C der Kostenfunktion
-            m = size(obj.X, 1);
-            X = obj.X;
-            y = obj.y;
-            B = obj.B;
-    
-            g = (1/m) * (X' * X * B - X' * y);
+            m = size(obj.X_current, 1);
+            X_design = [ones(m, 1), obj.X_current];
+            g = (1 / m) * (X_design' * (X_design * obj.B - obj.y));
         end
 
         function cost_history = gradientDescent(obj, alpha, num_iter)
-            % Führt das Gradientenverfahren durch
-            % Gibt Kostenverlauf zurück
-    
+            X_design = [ones(size(obj.X_current, 1), 1), obj.X_current];
+            obj.B = zeros(size(X_design, 2), 1);
             cost_history = zeros(num_iter, 1);
-    
             for k = 1:num_iter
-                g = obj.gradient();           % Gradientenvektor
-                obj.B = obj.B - alpha * g;    % Update der Parameter
-                cost_history(k) = obj.cost(); % Kosten speichern
+                g = obj.gradient();
+                obj.B = obj.B - alpha * g;
+                cost_history(k) = obj.cost();
             end
         end
 
         function B_rescaled = rescaleParameters(obj)
-            % Rückskalierung gemäß:
-            % β₀ = ~β₀ - sum(~βᵢ * μᵢ / σᵢ)
-            % βᵢ = ~βᵢ / σᵢ
-    
             B_scaled = obj.B;
             mu = obj.mu;
             sigma = obj.sigma;
             n = length(B_scaled);
-    
             B_rescaled = zeros(n, 1);
-    
-            % Rückskalierte Steigungen: βᵢ = ~βᵢ / σᵢ  (i ≥ 1)
             for i = 2:n
                 B_rescaled(i) = B_scaled(i) / sigma(i);
             end
-    
-            % Rückskalierter Achsenabschnitt:
-            % β₀ = ~β₀ - ∑ ~βᵢ * μᵢ / σᵢ
             correction = 0;
             for i = 2:n
                 correction = correction + B_scaled(i) * mu(i) / sigma(i);
@@ -212,24 +127,42 @@ classdef LinearModel < handle
         end
 
         function new_model = createPolyFeatures(obj, index, powers)
-            % Erstellt neues LinearModel mit polynomialen Features aus einer Spalte
-            % index: Spalte von obj.X, die transformiert wird
-            % powers: Vektor mit z. B. [0 1 2 3] → ergibt [1, x, x², x³]
-    
             x = obj.X(:, index);
             n = size(x, 1);
             num_terms = length(powers);
-    
-            % Neue Designmatrix erstellen
             X_poly = zeros(n, num_terms);
             for j = 1:num_terms
                 X_poly(:, j) = x.^powers(j);
             end
-    
-            % Initialisiere neues Modell mit entsprechendem B
-            B_init = zeros(num_terms, 1);
-            X_poly = [ones(length(x),1), X_poly]
-            new_model = regression.LinearModel(X_poly, obj.y, B_init);
+            X_poly = [ones(length(x),1), X_poly];
+            new_model = regression.LinearModel(X_poly, obj.y);
         end
+
+        function summary(obj, X_val, y_val)
+            % Zeigt Informationen über das aktuelle Modell:
+            % - Kosten
+            % - Parametervektor B
+            % - Bestimmtheitsmaß R² auf Validierungsdaten
+        
+            if isempty(obj.B)
+                error('Bitte zuerst fit() aufrufen, um das Modell zu trainieren.');
+            end
+        
+            % Kosten für Trainingsdaten berechnen
+            C = obj.cost();
+            fprintf('\n--- Modellinformationen ---\n');
+            fprintf('Kosten (Training): %.4f\n', C);
+        
+            % Parameter ausgeben
+            disp('Parametervektor B:');
+            disp(obj.B);
+        
+            % R² auf Validierungs-/Testdaten
+            if nargin == 3 && ~isempty(X_val) && ~isempty(y_val)
+                R2_val = obj.r2(X_val, y_val);
+                fprintf('Bestimmtheitsmaß R² (auf übergebenen Daten): %.4f\n', R2_val);
+            end
+        end
+
     end
 end
