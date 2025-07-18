@@ -62,20 +62,16 @@ classdef LinearModel < handle
             h = X_test * obj.B;
         end
 
-        function score = r2(obj, X_val, y_val, y_est)
-            if nargin < 4 || isempty(y_est)
-                if isempty(obj.B)
-                    error('Model must be fitted before calling r2().');
-                end
-                X_val = [y_val.^0, X_val(:, obj.featureInds)];  % Add bias
-                y_est = X_val * obj.B;
+        function score = r2(obj, X_val, y_val)
+            if isempty(obj.B)
+                error('Model must be fitted before calling r2().');
             end
+            X_val = [y_val.^0, X_val(:, obj.featureInds)];  % Bias-Spalte hinzufügen
+            y_est = X_val * obj.B;
         
-            ss_res = sum((y_val - y_est).^2);
-            ss_tot = sum((y_val - mean(y_val)).^2);
-            score = 1 - (ss_res / ss_tot);
+            % Nutze statische Methode
+            score = regression.LinearModel.r2score(y_val, y_est);
         end
-
 
         function [R, lambda] = eigenvalues(obj)
             % PCA auf X_current, ohne Bias und mit Standardisierung
@@ -180,6 +176,13 @@ classdef LinearModel < handle
                 fprintf('Bestimmtheitsmaß R² (auf übergebenen Daten): %.4f\n', R2_val);
             end
         end
-
+    end
+    methods (Static)
+    function score = r2score(y_val, y_est)
+        % Statische Methode zur Berechnung von R²
+        ss_res = sum((y_val - y_est).^2);
+        ss_tot = sum((y_val - mean(y_val)).^2);
+        score = 1 - (ss_res / ss_tot);
+    end
     end
 end
