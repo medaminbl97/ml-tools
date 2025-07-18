@@ -20,6 +20,7 @@ classdef LinearModel < handle
             obj.sigma = [];
             obj.X_current = X;
             obj.featureInds = [];
+            obj.setFeatureInds();
         end
 
         function setFeatureInds(obj, Inds)
@@ -46,6 +47,13 @@ classdef LinearModel < handle
             C = (1 / (2 * m)) * (e' * e);
         end
 
+        function rmse = computeRMSE(obj,Xv,yv)
+            % y_true: echte Werte
+            % y_pred: Vorhersagewerte
+            hv = obj.predict(Xv);
+            rmse = sqrt(mean((yv - hv).^2));
+        end
+
         function h = predict(obj, X_test)
             if isempty(obj.B)
                 error('Model must be fitted before prediction.');
@@ -70,10 +78,20 @@ classdef LinearModel < handle
 
 
         function [R, lambda] = eigenvalues(obj)
-            m = size(obj.X_current, 1);
-            R = (1 / m) * (obj.X_current' * obj.X_current);
+            % PCA auf X_current, ohne Bias und mit Standardisierung
+        
+            X = obj.X_current;
+        
+            % 1. Zentrieren und Standardisieren
+            X_norm = (X - mean(X)) ./ std(X);
+        
+            % 2. Korrelationsmatrix berechnen (da std ≠ 1)
+            R = corrcoef(X_norm);  % oder: R = (1 / size(X,1)) * (X_norm' * X_norm);
+        
+            % 3. Eigenwerte berechnen
             lambda = eig(R);
         end
+
 
         function scaleInputs(obj)
             X = obj.X_current;
@@ -134,7 +152,6 @@ classdef LinearModel < handle
             for j = 1:num_terms
                 X_poly(:, j) = x.^powers(j);
             end
-            X_poly = [ones(length(x),1), X_poly];
             new_model = regression.LinearModel(X_poly, obj.y);
         end
 
