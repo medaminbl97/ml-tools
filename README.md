@@ -4,6 +4,7 @@ This repository provides a collection of machine learning tools implemented in M
 
 ## 📁 Structure
 
+```matlab
 ml-tools/
 ├── +kmeans
 ├── +knn
@@ -12,7 +13,7 @@ ml-tools/
 ├── +regression
 ├── +svm
 └── README.md
-
+```
 ## 🚀 Usage Examples
 
 ### 1. Linear Regression
