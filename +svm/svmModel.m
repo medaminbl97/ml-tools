@@ -55,44 +55,51 @@ classdef svmModel < handle
             sv = obj.Model.SupportVectors;
         end
 
-        function optimizeHyperparameters(obj, CexpArray, varargin)
-            % Standard Exponenten für C, falls nicht übergeben
+        function [bestC,bestScale] = optimizeHyperparameters(obj, CexpArray, scaleExpArray)
+            % Standardwerte, falls nichts übergeben wird
             if nargin < 2 || isempty(CexpArray)
-                CexpArray = [-2, -1, 0, 1, 2];
+                CexpArray = [-2, -1, 0, 1, 2];  % entspricht [0.01, ..., 100]
+            end
+            if nargin < 3 || isempty(scaleExpArray)
+                scaleExpArray = [-2, -1, 0, 1, 2];
             end
         
-            % Basis-Argumente
-            args = {
-                'KernelFunction', obj.kernelFunction, ...
-                'Standardize', true, ...
-                'CrossVal', 'on'
-            };
-        
-            % Zusätzliche Name-Value-Pairs hinzufügen
-            if ~isempty(varargin)
-                args = [args, varargin];
-            end
-        
-            % Optimiert BoxConstraint (C) mittels Cross-Validation
             Cvals = 10.^CexpArray;
-            bestC = Cvals(1);
+            scaleVals = 10.^scaleExpArray;
+        
+            bestC = NaN;
+            bestScale = NaN;
             bestLoss = inf;
         
+            % Grid Search über beide Parameter
             for C = Cvals
-                currentArgs = [args, {'BoxConstraint', C}];
-                Mdl = fitcsvm(obj.X, obj.y, currentArgs{:});
-                loss = kfoldLoss(Mdl);
+                for s = scaleVals
+                    % Cross-Validated SVM trainieren
+                    Mdl = fitcsvm(obj.X, obj.y, ...
+                        'KernelFunction', obj.kernelFunction, ...
+                        'BoxConstraint', C, ...
+                        'KernelScale', s, ...
+                        'Standardize', true, ...
+                        'CrossVal', 'on');
         
-                if loss < bestLoss
-                    bestLoss = loss;
-                    bestC = C;
+                    loss = kfoldLoss(Mdl);
+        
+                    if loss < bestLoss
+                        bestLoss = loss;
+                        bestC = C;
+                        bestScale = s;
+                    end
                 end
             end
         
-            fprintf('Optimaler BoxConstraint (C): %.4f\n', bestC);
-            obj.boxConstraint = bestC;
+            fprintf('✅ Optimale Hyperparameter:\n');
+            fprintf('BoxConstraint (C): %.4f\n', bestC);
+            fprintf('KernelScale: %.4f\n', bestScale);
+            fprintf('CV-Verlust: %.4f\n', bestLoss);
+        
             obj.train();
         end
+
 
 
         function showModelInfo(obj)
@@ -150,7 +157,7 @@ classdef svmModel < handle
             plot(obj.X(svInd,1),obj.X(svInd,2),'ko','MarkerSize',10)
         end
 
-        function FR = evaluate(obj, Xtest, ytest)
+        function [ER,FR] = accuracy(obj, Xtest, ytest)
             % Evaluates the model on test data and returns the error rate (Fehlerrate)
             %
             % FR = 1 - (correctly classified samples / total samples)

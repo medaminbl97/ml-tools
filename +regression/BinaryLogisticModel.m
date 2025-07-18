@@ -168,12 +168,30 @@ classdef BinaryLogisticModel < handle
             obj.B = B_rescaled();
         end
         
-        function ER = accuracy(obj, Xval, yval)
-            % Berechnet die Erkennungsrate für gegebene Validierungsdaten
+        function [ER, recall, precision] = accuracy(obj, Xval, yval)
+            % Berechnet Accuracy, Recall und Precision für Klassifikation
+            
+            if isempty(obj.B)
+                error('Das Modell muss zuerst mit fit() trainiert werden.');
+            end
+        
+            % Design-Matrix mit Bias
+            Xval = [yval.^0, Xval];
+        
+            % Vorhersage mit Schwellenwert 0.5
             h = obj.sigmoid(Xval * obj.B);
             y_hat = h >= 0.5;
-            ER = mean(y_hat == yval);
+        
+            % Metriken berechnen
+            TP = sum((yval == 1) & (y_hat == 1));  % True Positives
+            FP = sum((yval == 0) & (y_hat == 1));  % False Positives
+            FN = sum((yval == 1) & (y_hat == 0));  % False Negatives
+        
+            ER = mean(y_hat == yval);  % Accuracy
+            recall = TP / (TP + FN);   % Sensitivität
+            precision = TP / (TP + FP);% Positiver Vorhersagewert
         end
+
 
         function models = createPolyModel(obj, degrees)
             % Erstellt ein Array von BinaryLogisticModel-Objekten für gegebene Polynomialgrade
