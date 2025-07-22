@@ -8,6 +8,9 @@ classdef LinearModel < handle
         sigma       % Standardabweichungen (außer Bias)
         X_current   % Aktuelle Featureauswahl
         featureInds
+        lambda      % Regularisierungsstärke
+        reg     % 'L1' oder 'L2'
+
     end
 
     methods
@@ -20,6 +23,8 @@ classdef LinearModel < handle
             obj.sigma = [];
             obj.X_current = X;
             obj.featureInds = [];
+            obj.lambda = 0;
+            obj.reg = "L2";
             obj.setFeatureInds();
         end
 
@@ -44,7 +49,24 @@ classdef LinearModel < handle
             X_design = [ones(m, 1), obj.X_current];
             e = obj.y - X_design * obj.B;
             obj.h = X_design * obj.B;
-            C = (1 / (2 * m)) * (e' * e);
+            C = (1 / (2 * m)) * (e' * e) + obj.getCostPenalty();
+        end
+
+        function g = gradient(obj)
+            m = size(obj.X_current, 1);
+            X_design = [ones(m, 1), obj.X_current];
+            g = (1 / m) * (X_design' * (X_design * obj.B - obj.y)) + obj.getGradPenalty();
+        end
+
+        function cost_history = gradientDescent(obj, alpha, num_iter)
+            X_design = [ones(size(obj.X_current, 1), 1), obj.X_current];
+            obj.B = zeros(size(X_design, 2), 1);
+            cost_history = zeros(num_iter, 1);
+            for k = 1:num_iter
+                g = obj.gradient();
+                obj.B = obj.B - alpha * g;
+                cost_history(k) = obj.cost();
+            end
         end
 
         function rmse = computeRMSE(obj,Xv,yv)
@@ -107,22 +129,7 @@ classdef LinearModel < handle
         end
 
 
-        function g = gradient(obj)
-            m = size(obj.X_current, 1);
-            X_design = [ones(m, 1), obj.X_current];
-            g = (1 / m) * (X_design' * (X_design * obj.B - obj.y));
-        end
-
-        function cost_history = gradientDescent(obj, alpha, num_iter)
-            X_design = [ones(size(obj.X_current, 1), 1), obj.X_current];
-            obj.B = zeros(size(X_design, 2), 1);
-            cost_history = zeros(num_iter, 1);
-            for k = 1:num_iter
-                g = obj.gradient();
-                obj.B = obj.B - alpha * g;
-                cost_history(k) = obj.cost();
-            end
-        end
+        
 
         function B_rescaled = rescaleParameters(obj)
             B_scaled = obj.B;
@@ -176,7 +183,44 @@ classdef LinearModel < handle
                 fprintf('Bestimmtheitsmaß R² (auf übergebenen Daten): %.4f\n', R2_val);
             end
         end
+        function penalty = getCostPenalty(obj)
+            if isempty(obj.lambda) || obj.lambda == 0
+                penalty = 0;
+                return;
+            end
+
+            m = size(obj.X_current,1);
+        
+            switch upper(obj.reg)
+                case 'L2'
+                    penalty = (obj.lambda / 2 / m) * sum(obj.B(2:end).^2); % ohne Bias
+                case 'L1'
+                    penalty = obj.lambda * sum(abs(obj.B(2:end))); % ohne Bias
+                otherwise
+                    error('Unbekannter Regularisierungstyp: %s', obj.reg);
+            end
+        end
+
+        function penalty = getGradPenalty(obj)
+            if isempty(obj.lambda) || obj.lambda == 0
+                penalty = 0;
+                return;
+            end
+
+            m = size(obj.X_current,1);
+        
+            switch upper(obj.reg)
+                case 'L2'
+                    penalty = (obj.lambda / m) .* [0;obj.B(2:end)]; % ohne Bias
+                case 'L1'
+                    penalty = (obj.lambda / m) .* sign([0;obj.B(2:end)]); % ohne Bias
+                otherwise
+                    error('Unbekannter Regularisierungstyp: %s', obj.reg);
+            end
+        end
     end
+    
+
     methods (Static)
     function score = r2score(y_val, y_est)
         % Statische Methode zur Berechnung von R²
