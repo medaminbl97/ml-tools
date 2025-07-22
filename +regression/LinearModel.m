@@ -44,13 +44,20 @@ classdef LinearModel < handle
             obj.h = X_design * obj.B;
         end
 
-        function C = cost(obj)
+        function [C, gC] = cost(obj, beta)
+            if nargin > 1
+                obj.B = beta;
+            end
             m = size(obj.X_current, 1);
             X_design = [ones(m, 1), obj.X_current];
             e = obj.y - X_design * obj.B;
             obj.h = X_design * obj.B;
             C = (1 / (2 * m)) * (e' * e) + obj.getCostPenalty();
+            if nargout > 1
+                gC = (1 / m) * (X_design' * (X_design * obj.B - obj.y)) + obj.getGradPenalty();
+            end
         end
+
 
         function g = gradient(obj)
             m = size(obj.X_current, 1);
@@ -60,14 +67,41 @@ classdef LinearModel < handle
 
         function cost_history = gradientDescent(obj, alpha, num_iter)
             X_design = [ones(size(obj.X_current, 1), 1), obj.X_current];
+            obj.scaleInputs()
             obj.B = zeros(size(X_design, 2), 1);
             cost_history = zeros(num_iter, 1);
             for k = 1:num_iter
-                g = obj.gradient();
-                obj.B = obj.B - alpha * g;
-                cost_history(k) = obj.cost();
+                [c,gc] = obj.cost();
+                obj.B = obj.B - alpha * gc;
+                cost_history(k) = c;
+            end
+            obj.B = obj.rescaleParameters();
+        end
+
+        function C = trainFminunc(obj, maxIter, log)
+            if nargin < 3
+                log = false;
+            end
+        
+            options = optimoptions('fminunc', ...
+                'Algorithm', 'trust-region', ...
+                'GradObj', 'on', ...
+                'MaxIter', maxIter);
+        
+            initial_beta = zeros(size(obj.X_current, 2) + 1, 1);
+            costFunc = @(b) obj.cost(b);  % closure mit optionalem beta
+        
+            [optB, Cval] = fminunc(costFunc, initial_beta, options);
+        
+            obj.B = optB;
+            C = Cval;
+            if log
+                fprintf('Kostenfunktion beim Optimalwert: %f\n', C);
+                fprintf('Optimales beta:\n');
+                fprintf(' %f\n', obj.B);
             end
         end
+
 
         function rmse = computeRMSE(obj,Xv,yv)
             % y_true: echte Werte
@@ -127,10 +161,6 @@ classdef LinearModel < handle
         
             obj.X_current = X;
         end
-
-
-        
-
         function B_rescaled = rescaleParameters(obj)
             B_scaled = obj.B;
             mu = obj.mu;
@@ -138,11 +168,11 @@ classdef LinearModel < handle
             n = length(B_scaled);
             B_rescaled = zeros(n, 1);
             for i = 2:n
-                B_rescaled(i) = B_scaled(i) / sigma(i);
+                B_rescaled(i) = B_scaled(i) / sigma(i-1);
             end
             correction = 0;
             for i = 2:n
-                correction = correction + B_scaled(i) * mu(i) / sigma(i);
+                correction = correction + B_scaled(i) * mu(i-1) / sigma(i-1);
             end
             B_rescaled(1) = B_scaled(1) - correction;
         end
