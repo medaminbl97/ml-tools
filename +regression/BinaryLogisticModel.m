@@ -10,7 +10,8 @@ classdef BinaryLogisticModel < handle
         mu     % Mittelwerte der Eingabevariablen (für Rückskalierung)
         sigma  % Standardabweichungen (für Rückskalierung)
         lambda
-        regularization
+        reg
+        X_current   
     end
 
     methods
@@ -24,13 +25,12 @@ classdef BinaryLogisticModel < handle
                 obj.mu = [];
                 obj.sigma = [];
                 obj.lambda = 0;
-                obj.regularization = "none";
+                obj.reg = "L2";
 
             else
         
                 % Bias hinzufügen
                 m = size(X, 1);
-                X_aug = [ones(m, 1), X];
             
                 % Prüfen, ob binär
                 uniqueY = unique(y);
@@ -39,14 +39,15 @@ classdef BinaryLogisticModel < handle
                 end
             
                 % Initialisierung
-                obj.X = X_aug;
+                obj.X = X;
+                obj.X_current = [ones(m, 1), X];
                 obj.y = y(:);  % Spaltenvektor
-                obj.B = zeros(size(X_aug, 2), 1);
+                obj.B = zeros(size(obj.X_current, 2), 1);
                 obj.H = [];
                 obj.mu = [];
                 obj.sigma = [];
                 obj.lambda = 0;
-                obj.regularization = "none";
+                obj.reg = "L2";
             end
         end
         
@@ -54,16 +55,15 @@ classdef BinaryLogisticModel < handle
             h = 1 ./ (1 + exp(-z));
         end
 
-        function [C, gC] = computeCost(obj, beta)
+        function [C, gC] = cost(obj, beta)
             % Berechnet Kosten und Gradienten
             % Wenn beta nicht übergeben wird → verwende obj.B
-        
-            if nargin < 2
-                beta = obj.B;
+            if nargin > 1
+                obj.B = beta;
             end
         
             m = length(obj.y);
-            z = obj.X * beta;
+            z = obj.X_current * obj.B;
             h = obj.sigmoid(z);
         
             % numerisch stabilisieren (gegen log(0))
@@ -71,12 +71,11 @@ classdef BinaryLogisticModel < handle
         
             obj.H = h;
             
-            [costPenalty, gradPenalty] = obj.getPenalty();
             % Kostenfunktion (skalare Ausgabe)
-            C = -mean(obj.y .* log(h) + (1 - obj.y) .* log(1 - h)) + costPenalty;
+            C = -mean(obj.y .* log(h) + (1 - obj.y) .* log(1 - h)) + obj.getCostPenalty();
         
             % Gradienten (gleiche Dimension wie beta)
-            gC = (obj.X' * (h - obj.y)) / m + gradPenalty;
+            gC = (obj.X_current' * (h - obj.y)) / m + obj.getGradPenalty();
         end
         
         function C = trainGradientDescent(obj, alpha, iter)
@@ -84,35 +83,38 @@ classdef BinaryLogisticModel < handle
             % alpha: Lernrate
             % iter: Anzahl Iterationen
             % Rückgabe: Verlauf der Kostenfunktion
-        
+            obj.scaleInputs();
             C = zeros(iter,1);
             for i = 1:iter
-                [C0, gC] = obj.computeCost();
+                [C0, gC] = obj.cost();
                 C(i) = C0;
                 obj.B = obj.B - alpha * gC;
             end
+            obj.B = obj.rescaleParameters();
+
         end
 
         function C = trainFminunc(obj, maxIter,log)
             % Trainiert das Modell mit fminunc
             % maxIter: Maximale Iterationen
             % Rückgabe: finaler Kostenwert (Skalar)
-
+        
             if nargin < 3
                 log = false;
             end
-        
+            
             options = optimoptions('fminunc', ...
                 'Algorithm', 'trust-region', ...
                 'GradObj', 'on', ...
                 'MaxIter', maxIter);
-        
-            initial_beta = zeros(size(obj.X, 2), 1);
-            costFunc = @(b) obj.computeCost(b);  % closure mit obj
+            obj.scaleInputs();
+            initial_beta = zeros(size(obj.X_current, 2), 1);
+            costFunc = @(b) obj.cost(b);  % closure mit obj
         
             [optB, Cval] = fminunc(costFunc, initial_beta, options);
         
             obj.B = optB;
+            obj.B = obj.rescaleParameters();
             C = Cval;
             if log
                 fprintf('Kostenfunktion beim Optimalwert: %f\n', C);
@@ -123,7 +125,10 @@ classdef BinaryLogisticModel < handle
 
 
         function scaleInputs(obj)
-            X = obj.X;
+            m = size(obj.X,1);
+            obj.X_current = [ones(m,1),obj.X]
+
+            X = obj.X_current;
             n = size(X, 2);
             obj.mu = zeros(1, n);
             obj.sigma = ones(1, n);  % Default-Werte für spätere Rückskalierung
@@ -138,7 +143,7 @@ classdef BinaryLogisticModel < handle
                 obj.sigma(j) = sigma_j;
             end
     
-            obj.X = X;
+            obj.X_current = X;
         end
 
         function B_rescaled = rescaleParameters(obj)
@@ -165,7 +170,8 @@ classdef BinaryLogisticModel < handle
                 correction = correction + B_scaled(i) * mu(i) / sigma(i);
             end
             B_rescaled(1) = B_scaled(1) - correction;
-            obj.B = B_rescaled();
+            obj.B = B_rescaled;
+            obj.resetCurrentX()
         end
         
         function [ER, recall, precision] = accuracy(obj, Xval, yval)
@@ -227,49 +233,66 @@ classdef BinaryLogisticModel < handle
         function [R, lambda] = eigenvalues(obj)
             % Gibt die Korrelationsmatrix R und ihre Eigenwerte lambda zurück
             m = size(obj.X, 1);
-            R = (1 / m) * (obj.X' * obj.X);  % Korrelationsmatrix
+            R = (1 / m) * (obj.X_current' * obj.X_current);  % Korrelationsmatrix
             lambda = eig(R);                 % Eigenwerte
         end
 
-        function [costPenalty, gradPenalty] = getPenalty(obj)
-            % Berechnet die Regularisierungsanteile für Kostenfunktion und Gradienten
-            % Nur für L2 (ridge) Regularisierung
-            
-            if isempty(obj.B)
-                error("getPenalty: Parameter 'B' ist leer.");
+        function penalty = getCostPenalty(obj)
+            if isempty(obj.lambda) || obj.lambda == 0
+                penalty = 0;
+                return;
             end
         
-            if isempty(obj.X)
-                error("getPenalty: Trainingsdaten 'X' sind leer, m kann nicht berechnet werden.");
-            end
+            m = size(obj.X, 1);
         
-            m = size(obj.X, 1);  % Anzahl Trainingsbeispiele
-            B = obj.B;
-        
-            switch obj.regularization
-                case "ridge"
-                    % Ignoriere Bias-Term (B(1))
-                    BReg = [0; B(2:end)];
-        
-                    costPenalty = (obj.lambda / (2 * m)) * sum(BReg.^2);
-                    gradPenalty = (obj.lambda / m) * BReg;
-        
-                case "lasso"
-                    warning("Lasso: Gradienten-Term ist nicht exakt definiert (nicht differenzierbar).");
-                    BReg = [0; B(2:end)];
-        
-                    costPenalty = (obj.lambda / m) * sum(abs(BReg));
-                    gradPenalty = (obj.lambda / m) * sign(BReg);  % Platzhalter – siehe Hinweis
-        
-                case "none"
-                    costPenalty = 0;
-                    gradPenalty = zeros(size(obj.B));
-        
+            switch upper(obj.reg)
+                case 'L2'
+                    penalty = (obj.lambda / (2 * m)) * sum(obj.B(2:end).^2);  % ohne Bias
+                case 'L1'
+                    penalty = (obj.lambda / m) * sum(abs(obj.B(2:end)));     % ohne Bias
                 otherwise
-                    error("Unbekannter Regularisierungstyp '%s'", obj.regularization);
+                    error('Unbekannter Regularisierungstyp: %s', obj.reg);
+            end
+        end
+        
+        function penalty = getGradPenalty(obj)
+            if isempty(obj.lambda) || obj.lambda == 0
+                penalty = zeros(size(obj.B));
+                return;
+            end
+        
+            m = size(obj.X, 1);
+        
+            switch upper(obj.reg)
+                case 'L2'
+                    penalty = (obj.lambda / m) * [0; obj.B(2:end)];
+                case 'L1'
+                    penalty = (obj.lambda / m) * sign([0; obj.B(2:end)]);
+                otherwise
+                    error('Unbekannter Regularisierungstyp: %s', obj.reg);
             end
         end
 
+        function new_model = createPolyFeatures(obj, index, powers)
+            % Erzeugt ein neues Modell mit Polynommen für eine gegebene Spalte
+            % index: Spaltenindex der originalen Eingabe (z. B. 1 oder 2)
+            % powers: Vektor mit Exponenten (z. B. [1 2 3])
+        
+            x = obj.X(:, index);        % Original (nicht X_current!)
+            n = size(x, 1);
+            num_terms = length(powers);
+            X_poly = zeros(n, num_terms);
+            for j = 1:num_terms
+                X_poly(:, j) = x.^powers(j);
+            end
+        
+            % Neues Modell mit diesen Features
+            new_model = regression.BinaryLogisticModel(X_poly, obj.y);
+        end
+
+        function resetCurrentX(obj)
+            obj.X_current = [ones(size(obj.X, 1), 1), obj.X];
+        end
 
     end
 end
