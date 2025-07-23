@@ -107,14 +107,12 @@ classdef BinaryLogisticModel < handle
                 'Algorithm', 'trust-region', ...
                 'GradObj', 'on', ...
                 'MaxIter', maxIter);
-            obj.scaleInputs();
             initial_beta = zeros(size(obj.X_current, 2), 1);
             costFunc = @(b) obj.cost(b);  % closure mit obj
         
             [optB, Cval] = fminunc(costFunc, initial_beta, options);
         
             obj.B = optB;
-            obj.B = obj.rescaleParameters();
             C = Cval;
             if log
                 fprintf('Kostenfunktion beim Optimalwert: %f\n', C);
