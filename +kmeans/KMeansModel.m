@@ -80,6 +80,9 @@ classdef KMeansModel < handle
     methods (Static)
         function [bestK, J_all] = elbow(X, k_range, n_runs)
             % Elbow-Methode: gibt bestK und J_all zurück
+            if nargin < 3
+                n_runs = 20;
+            end
             J_all = zeros(length(k_range), 1);
     
             for i = 1:length(k_range)

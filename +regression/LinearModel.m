@@ -45,16 +45,19 @@ classdef LinearModel < handle
         end
 
         function [C, gC] = cost(obj, beta)
-            if nargin > 1
-                obj.B = beta;
-            end
+            % Sicherstellen, dass beta als Spaltenvektor vorliegt
+            beta = beta(:);  
+        
             m = size(obj.X_current, 1);
             X_design = [ones(m, 1), obj.X_current];
-            e = obj.y - X_design * obj.B;
-            obj.h = X_design * obj.B;
-            C = (1 / (2 * m)) * (e' * e) + obj.getCostPenalty();
+        
+            h = X_design * beta;
+            e = obj.y - h;
+        
+            C = (1 / (2 * m)) * (e' * e) + obj.getCostPenalty(beta);
+        
             if nargout > 1
-                gC = (1 / m) * (X_design' * (X_design * obj.B - obj.y)) + obj.getGradPenalty();
+                gC = (1 / m) * (X_design' * (X_design * beta - obj.y)) + obj.getGradPenalty(beta);
             end
         end
 
@@ -66,16 +69,17 @@ classdef LinearModel < handle
         end
 
         function cost_history = gradientDescent(obj, alpha, num_iter)
-            X_design = [ones(size(obj.X_current, 1), 1), obj.X_current];
             obj.scaleInputs()
+            X_design = [ones(size(obj.X_current, 1), 1), obj.X_current];
             obj.B = zeros(size(X_design, 2), 1);
             cost_history = zeros(num_iter, 1);
             for k = 1:num_iter
-                [c,gc] = obj.cost();
+                [c,gc] = obj.cost(obj.B);
                 obj.B = obj.B - alpha * gc;
                 cost_history(k) = c;
             end
             obj.B = obj.rescaleParameters();
+            obj.setFeatureInds(obj.featureInds)
         end
 
         function C = trainFminunc(obj, maxIter, log)
@@ -86,8 +90,8 @@ classdef LinearModel < handle
             options = optimoptions('fminunc', ...
                 'Algorithm', 'trust-region', ...
                 'GradObj', 'on', ...
-                'MaxIter', maxIter);
-        
+                'MaxIter', maxIter, ...
+                "Display","off");
             initial_beta = zeros(size(obj.X_current, 2) + 1, 1);
             costFunc = @(b) obj.cost(b);  % closure mit optionalem beta
         
@@ -151,7 +155,7 @@ classdef LinearModel < handle
             obj.mu = zeros(1, n);
             obj.sigma = ones(1, n);
         
-            for j = 2:n  % skip bias term if present
+            for j = 1:n  % skip bias term if present
                 mu_j = mean(X(:, j));
                 sigma_j = std(X(:, j));
                 X(:, j) = (X(:, j) - mu_j) / sigma_j;
@@ -175,6 +179,7 @@ classdef LinearModel < handle
                 correction = correction + B_scaled(i) * mu(i-1) / sigma(i-1);
             end
             B_rescaled(1) = B_scaled(1) - correction;
+            obj.B = B_rescaled;
         end
 
         function new_model = createPolyFeatures(obj, index, powers)
@@ -213,25 +218,24 @@ classdef LinearModel < handle
                 fprintf('Bestimmtheitsmaß R² (auf übergebenen Daten): %.4f\n', R2_val);
             end
         end
-        function penalty = getCostPenalty(obj)
+
+        function penalty = getCostPenalty(obj, beta)
             if isempty(obj.lambda) || obj.lambda == 0
                 penalty = 0;
                 return;
             end
-
-            m = size(obj.X_current,1);
-        
+            m = size(obj.X_current, 1);
             switch upper(obj.reg)
                 case 'L2'
-                    penalty = (obj.lambda / 2 / m) * sum(obj.B(2:end).^2); % ohne Bias
+                    penalty = (obj.lambda / (2 * m)) * sum(beta(2:end).^2);
                 case 'L1'
-                    penalty = obj.lambda * sum(abs(obj.B(2:end))); % ohne Bias
+                    penalty = obj.lambda * sum(abs(beta(2:end)));
                 otherwise
-                    error('Unbekannter Regularisierungstyp: %s', obj.reg);
+                    error("Unbekannte Regularisierung: %s", obj.reg);
             end
         end
 
-        function penalty = getGradPenalty(obj)
+        function penalty = getGradPenalty(obj,beta)
             if isempty(obj.lambda) || obj.lambda == 0
                 penalty = 0;
                 return;
@@ -241,9 +245,9 @@ classdef LinearModel < handle
         
             switch upper(obj.reg)
                 case 'L2'
-                    penalty = (obj.lambda / m) .* [0;obj.B(2:end)]; % ohne Bias
+                    penalty = (obj.lambda / m) .* [0;beta(2:end)]; % ohne Bias
                 case 'L1'
-                    penalty = (obj.lambda / m) .* sign([0;obj.B(2:end)]); % ohne Bias
+                    penalty = (obj.lambda / m) .* sign([0;beta(2:end)]); % ohne Bias
                 otherwise
                     error('Unbekannter Regularisierungstyp: %s', obj.reg);
             end
