@@ -55,7 +55,7 @@ classdef svmModel < handle
             sv = obj.Model.SupportVectors;
         end
 
-        function [bestC,bestScale] = optimizeHyperparameters(obj, CexpArray, scaleExpArray)
+        function [bestC, bestScale, lossMatrix, bestIdxRow, bestIdxCol] = optimizeHyperparameters(obj, CexpArray, scaleExpArray)
             % Standardwerte, falls nichts übergeben wird
             if nargin < 2 || isempty(CexpArray)
                 CexpArray = [-2, -1, 0, 1, 2];  % entspricht [0.01, ..., 100]
@@ -71,10 +71,15 @@ classdef svmModel < handle
             bestScale = NaN;
             bestLoss = inf;
         
-            % Grid Search über beide Parameter
-            for C = Cvals
-                for s = scaleVals
-                    % Cross-Validated SVM trainieren
+            lossMatrix = zeros(length(Cvals), length(scaleVals));
+        
+            % Raster durchsuchen
+            for i = 1:length(Cvals)
+                for j = 1:length(scaleVals)
+                    C = Cvals(i);
+                    s = scaleVals(j);
+        
+                    % SVM mit Kreuzvalidierung
                     Mdl = fitcsvm(obj.X, obj.y, ...
                         'KernelFunction', obj.kernelFunction, ...
                         'BoxConstraint', C, ...
@@ -83,22 +88,25 @@ classdef svmModel < handle
                         'CrossVal', 'on');
         
                     loss = kfoldLoss(Mdl);
-        
-                    if loss < bestLoss
-                        bestLoss = loss;
-                        bestC = C;
-                        bestScale = s;
-                    end
+                    lossMatrix(i,j) = loss;
                 end
             end
         
+            % Minimum finden
+            [bestLoss, linearIdx] = min(lossMatrix(:));
+            [bestIdxRow, bestIdxCol] = ind2sub(size(lossMatrix), linearIdx);
+            bestC = Cvals(bestIdxRow);
+            bestScale = scaleVals(bestIdxCol);
+        
+            % Ausgabe
             fprintf('✅ Optimale Hyperparameter:\n');
             fprintf('BoxConstraint (C): %.4f\n', bestC);
             fprintf('KernelScale: %.4f\n', bestScale);
             fprintf('CV-Verlust: %.4f\n', bestLoss);
         
-            obj.train();
         end
+
+
 
 
 
