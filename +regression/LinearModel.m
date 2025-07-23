@@ -258,5 +258,41 @@ classdef LinearModel < handle
         ss_tot = sum((y_val - mean(y_val)).^2);
         score = 1 - (ss_res / ss_tot);
     end
+    function [x_plot, y_est] = predictLinearRange(beta, x_raw, N)
+        % predictLinearRange: erzeugt Vorhersagekurve für lineares Modell
+        %
+        % INPUT:
+        %   beta    - [beta0; beta1] (2x1) Parametervektor
+        %   x_raw   - Eingabedaten (z. B. X(:,2)), zur Bereichsbestimmung
+        %   N       - Anzahl der Punkte für die Kurve (optional, Default = 100)
+        %
+        % OUTPUT:
+        %   x_plot  - gleichmäßig verteilte x-Werte (Nx1)
+        %   y_est   - Vorhersage y = beta0 + beta1 * x_plot (Nx1)
+    
+        if nargin < 3
+            N = 100;
+        end
+    
+        % Sicherheits-Checks
+        beta = beta(:);           % stelle sicher, dass beta Spaltenvektor ist
+        x_raw = x_raw(:);         % x_raw ebenfalls Spaltenvektor
+        assert(length(beta) == 2, 'Beta muss 2x1 sein: [bias; gewicht]');
+    
+        % Bereich bestimmen
+        x_min = min(x_raw);
+        x_max = max(x_raw);
+    
+        % gleichmäßige x-Werte erzeugen
+        x_plot = linspace(x_min, x_max, N)';      % Spaltenvektor
+        X_design = [ones(N, 1), x_plot];          % Designmatrix
+        y_est = X_design * beta;                 % Vorhersage
+    
+        % Optional: y als Spalte erzwingen
+        y_est = y_est(:);
+    end
+
+
+
     end
 end
