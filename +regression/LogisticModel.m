@@ -1,4 +1,4 @@
-classdef BinaryLogisticModel < handle
+classdef LogisticModel < handle
     %LOGISTICMODEL Summary of this class goes here
     %   Detailed explanation goes here
 
@@ -15,7 +15,7 @@ classdef BinaryLogisticModel < handle
     end
 
     methods
-        function obj = BinaryLogisticModel(X, y)
+        function obj = LogisticModel(X, y)
             if nargin == 0
                 % Default constructor: for preallocation
                 obj.X = [];
@@ -172,7 +172,7 @@ classdef BinaryLogisticModel < handle
             obj.resetCurrentX()
         end
         
-        function [ER, recall, precision] = accuracy(obj, Xval, yval)
+        function [ER, recall, precision, CM] = accuracy(obj, Xval, yval)
             % Berechnet Accuracy, Recall und Precision für Klassifikation
             
             if isempty(obj.B)
@@ -180,8 +180,8 @@ classdef BinaryLogisticModel < handle
             end
         
             % Design-Matrix mit Bias
+            CM = obj.confusionMatrix(Xval,yval);
             Xval = [yval.^0, Xval];
-        
             % Vorhersage mit Schwellenwert 0.5
             h = obj.sigmoid(Xval * obj.B);
             y_hat = h >= 0.5;
@@ -194,13 +194,14 @@ classdef BinaryLogisticModel < handle
             ER = mean(y_hat == yval);  % Accuracy
             recall = TP / (TP + FN);   % Sensitivität
             precision = TP / (TP + FP);% Positiver Vorhersagewert
+            
         end
 
 
         function models = createPolyModel(obj, degrees)
-            % Erstellt ein Array von BinaryLogisticModel-Objekten für gegebene Polynomialgrade
+            % Erstellt ein Array von LogisticModel-Objekten für gegebene Polynomialgrade
             % degrees: Vektor von Polynomialgraden (z.B. [2, 3, 5])
-            % Rückgabe: Array von BinaryLogisticModel-Instanzen
+            % Rückgabe: Array von LogisticModel-Instanzen
         
             if size(obj.X, 2) ~= 3
                 error('createPolyModel funktioniert nur mit genau 2 Features (plus Bias-Spalte).');
@@ -210,7 +211,7 @@ classdef BinaryLogisticModel < handle
             x2 = obj.X(:,3);
         
             numDegrees = length(degrees);
-            models(1, numDegrees) = regression.BinaryLogisticModel();  % Preallocate model array
+            models(1, numDegrees) = regression.LogisticModel();  % Preallocate model array
         
             for k = 1:numDegrees
                 degree = degrees(k);
@@ -224,7 +225,7 @@ classdef BinaryLogisticModel < handle
                 end
         
                 % Modell erzeugen (Bias-Spalte wird nicht nochmal hinzugefügt)
-                models(k) = regression.BinaryLogisticModel(features(:, 2:end), obj.y);
+                models(k) = regression.LogisticModel(features(:, 2:end), obj.y);
             end
         end
 
@@ -285,12 +286,38 @@ classdef BinaryLogisticModel < handle
             end
         
             % Neues Modell mit diesen Features
-            new_model = regression.BinaryLogisticModel(X_poly, obj.y);
+            new_model = regression.LogisticModel(X_poly, obj.y);
         end
 
         function resetCurrentX(obj)
             obj.X_current = [ones(size(obj.X, 1), 1), obj.X];
         end
+
+        function CM = confusionMatrix(obj, Xval, yval)
+            % Berechnet die Konfusionsmatrix für gegebene Validierungsdaten
+            % Rückgabeformat: 2x2 Matrix [TP FN; FP TN]
+            
+            if isempty(obj.B)
+                error('Das Modell muss zuerst trainiert werden.');
+            end
+
+            % Design-Matrix mit Bias
+            Xval = [ones(size(Xval, 1), 1), Xval];
+
+            % Vorhersage
+            h = obj.sigmoid(Xval * obj.B);
+            y_hat = h >= 0.5;
+
+            % Elemente der Konfusionsmatrix
+            TP = sum((yval == 1) & (y_hat == 1));
+            FN = sum((yval == 1) & (y_hat == 0));
+            FP = sum((yval == 0) & (y_hat == 1));
+            TN = sum((yval == 0) & (y_hat == 0));
+
+            % Konfusionsmatrix
+            CM = [TP, FN; FP, TN];
+        end
+
 
     end
 end
